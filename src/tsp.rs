@@ -59,7 +59,8 @@ impl<'a> Individual for Route<'a> {
 
     fn mutate<R: Rng>(&mut self, mut rng: &mut R) {
         let range: Uniform<usize> = Uniform::from(1..self.route.len() - 1);
-        let mut mutation_indexes: HashSet<usize> = HashSet::with_capacity(self.spec.num_mutation_points);
+        let mut mutation_indexes: HashSet<usize> =
+            HashSet::with_capacity(self.spec.num_mutation_points);
         mutation_indexes.extend(
             range
                 .sample_iter(&mut rng)
@@ -77,7 +78,7 @@ impl<'a> Individual for Route<'a> {
         mutation_indexes
             .into_iter()
             .zip(mutation_points.iter())
-            .for_each(|(index, &new_value)| {self.route[index] = new_value; eprintln!("mutate [{}] = {}", index, new_value)});
+            .for_each(|(index, &new_value)| self.route[index] = new_value);
     }
 
     fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> Self {
@@ -99,18 +100,11 @@ impl<'a> Individual for Route<'a> {
             .iter()
             .filter(|&i| !gene_from_p1.contains(i))
             .copied();
-        eprintln!("{:?}", crossover_points);
-        eprintln!("p1{:?}\np2{:?}", p1.route, p2.route);
-        println!("segments {:?}",segments.len());
         segments.skip(1).step_by(2).for_each(|window| {
-            eprintln!("{}->{}",window[0], window[1]);
             for i in &mut child.route[window[0]..window[1]] {
                 *i = gene_from_p2.next().unwrap();
-                eprint!("{} ", i);
             }
-            eprintln!();
         });
-        eprintln!("child{:?}", child.route);
         child
     }
 

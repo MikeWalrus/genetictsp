@@ -2,7 +2,11 @@ use std::{iter::repeat, os::unix::process::parent_id};
 
 use anyhow::Result;
 use itertools::Itertools;
-use rand::{Rng, SeedableRng, distributions::WeightedIndex, prelude::{Distribution, SliceRandom, StdRng}, thread_rng};
+use rand::{
+    distributions::WeightedIndex,
+    prelude::{Distribution, SliceRandom, StdRng},
+    thread_rng, Rng, SeedableRng,
+};
 use rayon::prelude::*;
 use ringbuffer::*;
 
