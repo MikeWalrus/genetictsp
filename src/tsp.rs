@@ -1,3 +1,4 @@
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use std::{collections::HashSet, iter::repeat, path::Path};
 
 use super::ga::*;
@@ -6,6 +7,7 @@ use rand::{
     prelude::{Distribution, SliceRandom},
     thread_rng, Rng,
 };
+use rayon::slice::ParallelSlice;
 use ringbuffer::*;
 use tspf::*;
 
@@ -114,8 +116,7 @@ impl<'a> Individual for Route<'a> {
 }
 
 fn total_weight(route: &[usize], tsp: &Tsp) -> f64 {
-    route
-        .windows(2)
+    route.par_windows(2).with_min_len(256)
         .map(|edge| tsp.weight(edge[0], edge[1]))
         .sum()
 }
@@ -131,7 +132,7 @@ pub fn solve_tsp(path: &Path) {
     init_route.extend(0..tsp.dim());
     init_route.push(0);
 
-    let num = 2000;
+    let num = 5000;
     let mut rng = thread_rng();
     let individuals = repeat(init_route.clone())
         .take(num)
@@ -146,7 +147,7 @@ pub fn solve_tsp(path: &Path) {
         .collect();
 
     let mut population = Population::new(individuals, num, 0.5, 0.2);
-    for _ in 0..1000000 {
+    for _ in 0..100 {
         population.evolve().unwrap();
         println!("{:?}", population.history().peek().unwrap())
     }

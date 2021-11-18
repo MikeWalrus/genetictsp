@@ -1,11 +1,8 @@
-use std::{iter::repeat, os::unix::process::parent_id};
-
 use anyhow::Result;
 use itertools::Itertools;
 use rand::{
     distributions::WeightedIndex,
-    prelude::{Distribution, SliceRandom, StdRng},
-    thread_rng, Rng, SeedableRng,
+    prelude::*,
 };
 use rayon::prelude::*;
 use ringbuffer::*;
@@ -15,7 +12,6 @@ pub struct Population<T: Individual> {
     num: usize,
     num_children: usize,
     num_reserve: usize,
-    rand_amount: usize,
     mutation_probability: f64,
     history: AllocRingBuffer<(f64, f64)>,
 }
@@ -42,15 +38,14 @@ impl<T: Individual> Population<T> {
             num_reserve: num - num_children,
             mutation_probability,
             history: AllocRingBuffer::with_capacity(8),
-            rand_amount: num_children + num,
         }
     }
 
     pub fn evolve(&mut self) -> Result<()> {
-        let mut rng = thread_rng();
-        let mut weights: Vec<f64> = Vec::with_capacity(self.num);
-        let min = self.history.back().map(|(_, min)| *min).unwrap_or(0f64) * 0.9;
-        weights.extend(self.individuals.iter().map(|i| i.fitness() - min));
+        self.individuals
+            .sort_unstable_by(|x, y| x.fitness().partial_cmp(&y.fitness()).unwrap());
+        let mut weights: Vec<usize> = Vec::with_capacity(self.num);
+        weights.extend(0..self.individuals.len());
         let dist = WeightedIndex::new(weights).unwrap();
         let mut parents = dist
             .sample_iter(thread_rng())
