@@ -58,13 +58,16 @@ impl<'a> Individual for Route<'a> {
     }
 
     fn mutate<R: Rng>(&mut self, mut rng: &mut R) {
-        let range: Uniform<usize> = Uniform::from(1..self.spec.tsp.dim() - 1);
-        let mut mutation_indexes = Vec::with_capacity(self.spec.num_mutation_points);
+        let range: Uniform<usize> = Uniform::from(1..self.route.len() - 1);
+        let mut mutation_indexes: HashSet<usize> = HashSet::with_capacity(self.spec.num_mutation_points);
         mutation_indexes.extend(
             range
                 .sample_iter(&mut rng)
                 .take(self.spec.num_mutation_points),
         );
+        while mutation_indexes.len() != self.spec.num_mutation_points {
+            mutation_indexes.insert(range.sample(rng));
+        }
         let mut mutation_points: Vec<usize> = mutation_indexes
             .iter()
             .copied()
@@ -74,15 +77,15 @@ impl<'a> Individual for Route<'a> {
         mutation_indexes
             .into_iter()
             .zip(mutation_points.iter())
-            .for_each(|(index, &new_value)| self.route[index] = new_value);
+            .for_each(|(index, &new_value)| {self.route[index] = new_value; eprintln!("mutate [{}] = {}", index, new_value)});
     }
 
     fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> Self {
-        let range: Uniform<usize> = Uniform::from(1..p1.spec.tsp.dim());
+        let range: Uniform<usize> = Uniform::from(1..p1.route.len());
         let mut crossover_points = Vec::with_capacity(p1.spec.num_crossover_points + 2);
         crossover_points.extend(range.sample_iter(rng).take(p1.spec.num_crossover_points));
         crossover_points.push(1);
-        crossover_points.push(p1.spec.tsp.dim() - 1);
+        crossover_points.push(p1.spec.tsp.dim());
         crossover_points.sort_unstable();
         let segments = crossover_points.windows(2);
         let gene_from_p1: HashSet<usize> = segments
@@ -96,13 +99,18 @@ impl<'a> Individual for Route<'a> {
             .iter()
             .filter(|&i| !gene_from_p1.contains(i))
             .copied();
+        eprintln!("{:?}", crossover_points);
+        eprintln!("p1{:?}\np2{:?}", p1.route, p2.route);
+        println!("segments {:?}",segments.len());
         segments.skip(1).step_by(2).for_each(|window| {
+            eprintln!("{}->{}",window[0], window[1]);
             for i in &mut child.route[window[0]..window[1]] {
-                *i = gene_from_p2.next().unwrap()
+                *i = gene_from_p2.next().unwrap();
+                eprint!("{} ", i);
             }
+            eprintln!();
         });
-        //println!("{:?}", crossover_points);
-        //println!("{:?}\n{:?}\n{:?}\n", p1.route, p2.route, child.route);
+        eprintln!("child{:?}", child.route);
         child
     }
 
@@ -122,8 +130,8 @@ pub fn solve_tsp(path: &Path) {
     let tsp = TspBuilder::parse_path(path).unwrap();
     let spec = Spec {
         tsp: &tsp,
-        num_crossover_points: 4,
-        num_mutation_points: 5,
+        num_crossover_points: 1,
+        num_mutation_points: 3,
     };
     let mut init_route: Vec<usize> = Vec::with_capacity(tsp.dim() + 2);
     init_route.extend(0..tsp.dim());
@@ -134,7 +142,7 @@ pub fn solve_tsp(path: &Path) {
     let individuals = repeat(init_route.clone())
         .take(num)
         .map(|mut i| {
-            i[1..tsp.dim() - 1].shuffle(&mut rng);
+            i[1..tsp.dim()].shuffle(&mut rng);
             Route {
                 fitness: 1f64 / total_weight(&i, &tsp),
                 spec: &spec,

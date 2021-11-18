@@ -2,11 +2,7 @@ use std::{iter::repeat, os::unix::process::parent_id};
 
 use anyhow::Result;
 use itertools::Itertools;
-use rand::{
-    distributions::WeightedIndex,
-    prelude::{Distribution, SliceRandom},
-    thread_rng, Rng,
-};
+use rand::{Rng, SeedableRng, distributions::WeightedIndex, prelude::{Distribution, SliceRandom, StdRng}, thread_rng};
 use rayon::prelude::*;
 use ringbuffer::*;
 
@@ -20,7 +16,7 @@ pub struct Population<T: Individual> {
     history: AllocRingBuffer<(f64, f64)>,
 }
 
-pub trait Individual: Clone {
+pub trait Individual: Clone + Sync + Send {
     fn fitness(&self) -> f64;
     fn update_fitness(&mut self);
     fn mutate<R: Rng>(&mut self, rng: &mut R);
@@ -59,7 +55,7 @@ impl<T: Individual> Population<T> {
             .by_ref()
             .take(self.num_children * 2)
             .tuples()
-            .map(|(p1, p2)| self.get_child(p1, p2, &mut rng))
+            .map(|(p1, p2)| self.get_child(p1, p2))
             .collect();
         children.extend(parents.take(self.num_reserve).map(T::clone));
         let mut fitness_max = 0f64;
@@ -78,7 +74,8 @@ impl<T: Individual> Population<T> {
         Ok(())
     }
 
-    fn get_child<R: Rng>(&self, p1: &T, p2: &T, mut rng: R) -> T {
+    fn get_child(&self, p1: &T, p2: &T) -> T {
+        let mut rng = thread_rng();
         let mut i = Individual::crossover(p1, p2, &mut rng);
         if rng.gen_bool(self.mutation_probability) {
             i.mutate(&mut rng)
