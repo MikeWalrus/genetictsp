@@ -59,6 +59,8 @@ impl<T: Individual> Population<T> {
             .by_ref()
             .take(self.num_children * 2)
             .tuples()
+            .collect_vec()
+            .par_iter()
             .map(|(p1, p2)| self.get_child(p1, p2))
             .collect();
         children.extend(parents.take(self.num_reserve).map(T::clone));

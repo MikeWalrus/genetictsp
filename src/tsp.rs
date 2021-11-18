@@ -124,14 +124,14 @@ pub fn solve_tsp(path: &Path) {
     let tsp = TspBuilder::parse_path(path).unwrap();
     let spec = Spec {
         tsp: &tsp,
-        num_crossover_points: 1,
+        num_crossover_points: 3,
         num_mutation_points: 3,
     };
     let mut init_route: Vec<usize> = Vec::with_capacity(tsp.dim() + 2);
     init_route.extend(0..tsp.dim());
     init_route.push(0);
 
-    let num = 1000;
+    let num = 2000;
     let mut rng = thread_rng();
     let individuals = repeat(init_route.clone())
         .take(num)
@@ -145,7 +145,7 @@ pub fn solve_tsp(path: &Path) {
         })
         .collect();
 
-    let mut population = Population::new(individuals, num, 0.5, 0.1);
+    let mut population = Population::new(individuals, num, 0.5, 0.2);
     for _ in 0..1000000 {
         population.evolve().unwrap();
         println!("{:?}", population.history().peek().unwrap())
