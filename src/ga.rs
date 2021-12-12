@@ -1,11 +1,7 @@
 use anyhow::Result;
 use itertools::Itertools;
-use rand::{
-    distributions::WeightedIndex,
-    prelude::*,
-};
+use rand::{distributions::WeightedIndex, prelude::*};
 use rayon::prelude::*;
-use ringbuffer::*;
 
 pub struct Population<T: Individual> {
     individuals: Vec<T>,
@@ -13,7 +9,6 @@ pub struct Population<T: Individual> {
     num_children: usize,
     num_reserve: usize,
     mutation_probability: f64,
-    history: AllocRingBuffer<(f64, f64)>,
 }
 
 pub trait Individual: Clone + Sync + Send {
@@ -25,25 +20,23 @@ pub trait Individual: Clone + Sync + Send {
 
 impl<T: Individual> Population<T> {
     pub fn new(
-        individuals: Vec<T>,
+        mut individuals: Vec<T>,
         num: usize,
         crossover_probability: f64,
         mutation_probability: f64,
     ) -> Self {
         let num_children = (num as f64 * crossover_probability) as usize;
+        sort_individuals(&mut individuals);
         Population {
             individuals,
             num,
             num_children,
             num_reserve: num - num_children,
             mutation_probability,
-            history: AllocRingBuffer::with_capacity(8),
         }
     }
 
     pub fn evolve(&mut self) -> Result<()> {
-        self.individuals
-            .sort_unstable_by(|x, y| x.fitness().partial_cmp(&y.fitness()).unwrap());
         let mut weights: Vec<usize> = Vec::with_capacity(self.num);
         weights.extend(0..self.individuals.len());
         let dist = WeightedIndex::new(weights).unwrap();
@@ -59,19 +52,11 @@ impl<T: Individual> Population<T> {
             .map(|(p1, p2)| self.get_child(p1, p2))
             .collect();
         children.extend(parents.take(self.num_reserve).map(T::clone));
-        let mut fitness_max = 0f64;
-        let mut fitness_min = f64::MAX;
         for i in &mut children {
             i.update_fitness();
-            if fitness_max < i.fitness() {
-                fitness_max = i.fitness()
-            }
-            if fitness_min > i.fitness() {
-                fitness_min = i.fitness()
-            }
         }
+        sort_individuals(&mut children);
         self.individuals = children;
-        self.history.push((fitness_max, fitness_min));
         Ok(())
     }
 
@@ -84,8 +69,20 @@ impl<T: Individual> Population<T> {
         i
     }
 
-    /// Get a reference to the population's history.
-    pub fn history(&self) -> &AllocRingBuffer<(f64, f64)> {
-        &self.history
+    pub fn get_best(&self) -> &T {
+        self.individuals.last().unwrap()
     }
+
+    pub fn get_worst(&self) -> &T {
+        &self.individuals[0]
+    }
+
+    pub fn get_avg_fitness(&self) -> f64 {
+        let sum: f64 = self.individuals.iter().map(|i| i.fitness()).sum();
+        sum / self.individuals.len() as f64
+    }
+}
+
+fn sort_individuals<T: Individual>(individuals: &mut Vec<T>) {
+    individuals.sort_unstable_by(|x, y| x.fitness().partial_cmp(&y.fitness()).unwrap());
 }
