@@ -6,7 +6,7 @@ use rayon::prelude::*;
 pub struct Population<T: Individual> {
     individuals: Vec<T>,
     num: usize,
-    num_children: usize,
+    num_crossover: usize,
     num_reserve: usize,
     mutation_probability: f64,
 }
@@ -15,7 +15,7 @@ pub trait Individual: Clone + Sync + Send {
     fn fitness(&self) -> f64;
     fn update_fitness(&mut self);
     fn mutate<R: Rng>(&mut self, rng: &mut R);
-    fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> Self;
+    fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> [Self; 2];
 }
 
 impl<T: Individual> Population<T> {
@@ -25,18 +25,19 @@ impl<T: Individual> Population<T> {
         crossover_probability: f64,
         mutation_probability: f64,
     ) -> Self {
-        let num_children = (num as f64 * crossover_probability) as usize;
+        let num_crossover = (num as f64 * crossover_probability) as usize;
         sort_individuals(&mut individuals);
         Population {
             individuals,
             num,
-            num_children,
-            num_reserve: num - num_children,
+            num_crossover,
+            num_reserve: num - 2 * num_crossover,
             mutation_probability,
         }
     }
 
     pub fn evolve(&mut self) -> Result<()> {
+        let mut rng = thread_rng();
         let mut weights: Vec<usize> = Vec::with_capacity(self.num);
         weights.extend(0..self.individuals.len());
         let dist = WeightedIndex::new(weights).unwrap();
@@ -45,28 +46,26 @@ impl<T: Individual> Population<T> {
             .map(|index| &self.individuals[index]);
         let mut children: Vec<T> = parents
             .by_ref()
-            .take(self.num_children * 2)
+            .take(self.num_crossover)
             .tuples()
             .collect_vec()
             .par_iter()
-            .map(|(p1, p2)| self.get_child(p1, p2))
+            .flat_map(|(p1, p2)| {
+                Individual::crossover(*p1, *p2, &mut thread_rng())
+                    .into_iter()
+                    .par_bridge()
+            })
             .collect();
         children.extend(parents.take(self.num_reserve).map(T::clone));
         for i in &mut children {
+            if rng.gen_bool(self.mutation_probability) {
+                i.mutate(&mut rng)
+            }
             i.update_fitness();
         }
         sort_individuals(&mut children);
         self.individuals = children;
         Ok(())
-    }
-
-    fn get_child(&self, p1: &T, p2: &T) -> T {
-        let mut rng = thread_rng();
-        let mut i = Individual::crossover(p1, p2, &mut rng);
-        if rng.gen_bool(self.mutation_probability) {
-            i.mutate(&mut rng)
-        }
-        i
     }
 
     pub fn get_best(&self) -> &T {

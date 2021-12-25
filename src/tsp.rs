@@ -20,36 +20,6 @@ struct Spec<'a, T: Tsp> {
     num_crossover_points: usize,
     num_mutation_points: usize,
 }
-
-struct Edge(usize, usize);
-impl PartialEq for Edge {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.1 == other.1 || self.0 == other.1 && self.1 == other.0
-    }
-}
-
-impl Eq for Edge {}
-
-impl PartialOrd for Edge {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self == other {
-            Some(std::cmp::Ordering::Equal)
-        } else {
-            (self.0, self.1).partial_cmp(&(other.0, other.1))
-        }
-    }
-}
-
-impl Ord for Edge {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self == other {
-            std::cmp::Ordering::Equal
-        } else {
-            (self.0, self.1).cmp(&(other.0, other.1))
-        }
-    }
-}
-
 struct Route<'a, T: Tsp> {
     route: Vec<usize>,
     fitness: f64,
@@ -95,36 +65,48 @@ impl<'a, T: Tsp> Individual for Route<'a, T> {
             .for_each(|(index, &new_value)| self.route[index] = new_value);
     }
 
-    fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> Self {
+    fn crossover<R: Rng>(p1: &Self, p2: &Self, rng: &mut R) -> [Self; 2] {
         let range: Uniform<usize> = Uniform::from(1..p1.route.len());
         let mut crossover_points = Vec::with_capacity(p1.spec.num_crossover_points + 2);
         crossover_points.extend(range.sample_iter(rng).take(p1.spec.num_crossover_points));
         crossover_points.push(1);
         crossover_points.push(p1.spec.tsp.dim());
         crossover_points.sort_unstable();
-        let segments = crossover_points.windows(2);
-        let gene_from_p1: HashSet<usize> = segments
-            .clone()
-            .step_by(2)
-            .flat_map(|window| &p1.route[window[0]..window[1]])
-            .copied()
-            .collect();
-        let mut child = p1.clone();
-        let mut gene_from_p2 = p2.route[1..p2.route.len() - 1]
-            .iter()
-            .filter(|&i| !gene_from_p1.contains(i))
-            .copied();
-        segments.skip(1).step_by(2).for_each(|window| {
-            for i in &mut child.route[window[0]..window[1]] {
-                *i = gene_from_p2.next().unwrap();
-            }
-        });
-        child
+        [
+            get_one_child::<_, 0, 1>(&crossover_points, p1, p2),
+            get_one_child::<_, 1, 0>(&crossover_points, p1, p2),
+        ]
     }
 
     fn update_fitness(&mut self) {
         self.fitness = 1f64 / total_weight(&self.route, self.spec.tsp)
     }
+}
+
+fn get_one_child<'a, T: Tsp, const N: usize, const M: usize>(
+    crossover_points: &[usize],
+    p1: &Route<'a, T>,
+    p2: &Route<T>,
+) -> Route<'a, T> {
+    let segments = crossover_points.windows(2);
+    let gene_from_p1: HashSet<usize> = segments
+        .clone()
+        .skip(N)
+        .step_by(2)
+        .flat_map(|window| &p1.route[window[0]..window[1]])
+        .copied()
+        .collect();
+    let mut child = p1.clone();
+    let mut gene_from_p2 = p2.route[1..p2.route.len() - 1]
+        .iter()
+        .filter(|&i| !gene_from_p1.contains(i))
+        .copied();
+    segments.skip(M).step_by(2).for_each(|window| {
+        for i in &mut child.route[window[0]..window[1]] {
+            *i = gene_from_p2.next().unwrap();
+        }
+    });
+    child
 }
 
 fn total_weight<T: Tsp>(route: &[usize], tsp: &T) -> f64 {
