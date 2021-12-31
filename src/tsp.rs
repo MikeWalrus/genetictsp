@@ -1,6 +1,5 @@
 use anyhow::*;
 use indicatif::{ProgressBar, ProgressStyle};
-use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use std::{collections::HashSet, iter::repeat, path::Path};
 
 use crate::ga::*;
@@ -12,7 +11,6 @@ use rand::{
     prelude::{Distribution, SliceRandom},
     thread_rng, Rng,
 };
-use rayon::slice::ParallelSlice;
 
 #[derive(Clone)]
 struct Spec<'a, T: Tsp> {
@@ -89,17 +87,17 @@ fn get_one_child<'a, T: Tsp, const N: usize, const M: usize>(
     p2: &Route<T>,
 ) -> Route<'a, T> {
     let segments = crossover_points.windows(2);
-    let gene_from_p1: HashSet<usize> = segments
+    let mut is_from_p1: Vec<bool> = vec![false; p1.route.len()];
+    segments
         .clone()
         .skip(N)
         .step_by(2)
         .flat_map(|window| &p1.route[window[0]..window[1]])
-        .copied()
-        .collect();
+        .for_each(|i| is_from_p1[*i] = true);
     let mut child = p1.clone();
     let mut gene_from_p2 = p2.route[1..p2.route.len() - 1]
         .iter()
-        .filter(|&i| !gene_from_p1.contains(i))
+        .filter(|&&i| !is_from_p1[i])
         .copied();
     segments.skip(M).step_by(2).for_each(|window| {
         for i in &mut child.route[window[0]..window[1]] {
@@ -111,9 +109,8 @@ fn get_one_child<'a, T: Tsp, const N: usize, const M: usize>(
 
 fn total_weight<T: Tsp>(route: &[usize], tsp: &T) -> f64 {
     route
-        .par_windows(2)
-        .with_min_len(256)
-        .map(|edge| /*get_weight(tsp, edge[0], edge[1])*/tsp.weight(edge[0], edge[1]))
+        .windows(2)
+        .map(|edge| tsp.weight(edge[0], edge[1]))
         .sum()
 }
 
@@ -139,6 +136,13 @@ pub fn solve_tsp<T: Tsp>(opt: Opt, tsp: T) -> Result<()> {
             }
         })
         .collect();
+
+    if opt.crossover_probability > 1. || opt.crossover_probability < 0. {
+        return Err(anyhow!("invalid probability"));
+    }
+    if opt.mutation_probability > 1. || opt.mutation_probability < 0. {
+        return Err(anyhow!("invalid probability"));
+    }
 
     let mut population = Population::new(
         individuals,

@@ -1,7 +1,6 @@
 use anyhow::Result;
 use itertools::Itertools;
 use rand::{distributions::WeightedIndex, prelude::*};
-use rayon::prelude::*;
 
 pub struct Population<T: Individual> {
     individuals: Vec<T>,
@@ -25,7 +24,7 @@ impl<T: Individual> Population<T> {
         crossover_probability: f64,
         mutation_probability: f64,
     ) -> Self {
-        let num_crossover = (num as f64 * crossover_probability) as usize;
+        let num_crossover = (num as f64 * crossover_probability) as usize / 2;
         sort_individuals(&mut individuals);
         Population {
             individuals,
@@ -44,18 +43,18 @@ impl<T: Individual> Population<T> {
         let mut parents = dist
             .sample_iter(thread_rng())
             .map(|index| &self.individuals[index]);
-        let mut children: Vec<T> = parents
-            .by_ref()
-            .take(self.num_crossover)
-            .tuples()
-            .collect_vec()
-            .par_iter()
-            .flat_map(|(p1, p2)| {
-                Individual::crossover(*p1, *p2, &mut thread_rng())
-                    .into_iter()
-                    .par_bridge()
-            })
-            .collect();
+        let mut children: Vec<T> = Vec::with_capacity(self.num);
+        children.extend(
+            parents
+                .by_ref()
+                .take(self.num_crossover)
+                .tuples()
+                .collect_vec()
+                .iter()
+                .flat_map(|(p1, p2)| {
+                    Individual::crossover(*p1, *p2, &mut thread_rng()).into_iter()
+                }),
+        );
         children.extend(parents.take(self.num_reserve).map(T::clone));
         for i in &mut children {
             if rng.gen_bool(self.mutation_probability) {
